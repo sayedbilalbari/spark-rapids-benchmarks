@@ -38,6 +38,22 @@ from typing import Callable
 from pyspark.sql import SparkSession
 from python_benchmark_reporter.PythonListener import PythonListener
 
+
+
+def _safe_spark_conf(spark_session: SparkSession):
+    try:
+        return dict(spark_session.sparkContext._conf.getAll())
+    except Exception:
+        runtime_conf = getattr(spark_session, 'conf', None)
+        if runtime_conf is not None:
+            get_all = getattr(runtime_conf, 'getAll', None)
+            if callable(get_all):
+                try:
+                    return dict(get_all())
+                except Exception:
+                    pass
+        return {}
+
 class PysparkBenchReport:
     """Class to generate json summary report for a benchmark
     """
@@ -67,7 +83,7 @@ class PysparkBenchReport:
         Returns:
             dict: summary of the fn
         """
-        spark_conf = dict(self.spark_session.sparkContext._conf.getAll())
+        spark_conf = _safe_spark_conf(self.spark_session)
         env_vars = dict(os.environ)
         redacted = ["TOKEN", "SECRET", "PASSWORD"]
         filtered_env_vars = dict((k, env_vars[k]) for k in env_vars.keys() if not (k in redacted))
@@ -78,7 +94,7 @@ class PysparkBenchReport:
         try:
             listener = PythonListener()
             listener.register()
-        except TypeError as e:
+        except Exception as e:
             print("Not found com.nvidia.spark.rapids.listener.Manager", str(e))
             listener = None
         if listener is not None:
